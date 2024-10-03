@@ -60,6 +60,15 @@
 </div>
 
 <script>
+// Add this function at the beginning of your script
+function clearFileInputs() {
+    document.getElementById('fileInput').value = '';
+    document.getElementById('folderInput').value = '';
+}
+
+// Call this function when the page loads
+window.onload = clearFileInputs;
+
 function uploadFiles() {
     const fileInput = document.getElementById('fileInput');
     const formData = new FormData();

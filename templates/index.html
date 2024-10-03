@@ -1,0 +1,190 @@
+<!-- templates/index.html -->
+
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Directory: {{ masked_path }}</h2>
+
+{% if current_path %}
+    <a href="{{ url_for('main.file_system', req_path=parent_path) }}" class="btn btn-secondary mb-3">Go to Parent Directory</a>
+{% endif %}
+
+<h4>Upload Files and Folders</h4>
+<div class="mb-4">
+    <input type="file" id="fileInput" class="form-control mb-2" multiple>
+    <input type="file" id="folderInput" class="form-control mb-2" webkitdirectory directory multiple>
+    <button onclick="uploadFiles()" class="btn btn-primary">Upload Files</button>
+    <button onclick="uploadFolder()" class="btn btn-primary">Upload Folder</button>
+</div>
+<div id="uploadQueue" class="mb-3"></div>
+<progress id="uploadProgress" value="0" max="100" style="width: 100%; display: none;"></progress>
+
+<h4>Create New Folder</h4>
+<form id="createFolderForm" action="{{ url_for('main.file_system', req_path=current_path) }}" method="post" enctype="multipart/form-data" class="mb-4">
+    <input type="hidden" name="action" value="create_folder">
+    <div class="input-group">
+        <input type="text" name="folder_name" class="form-control" placeholder="Folder Name" required>
+        <button type="submit" class="btn btn-success">Create</button>
+    </div>
+</form>
+
+<hr>
+
+<div class="col-md-12">
+    <h4>Files and Folders</h4>
+    <ul class="list-group">
+        {% for item in contents.folders + contents.files %}
+            <li class="list-group-item d-flex justify-content-between align-items-center">
+                {% if item in contents.folders %}
+                    <a href="{{ url_for('main.file_system', req_path=(current_path ~ '/' ~ item)|trim('/')) }}">{{ item }}</a>
+                    <div>
+                        <form action="{{ url_for('main.file_system', req_path=(current_path ~ '/' ~ item)|trim('/')) }}" method="post" class="d-inline">
+                            <input type="hidden" name="action" value="download_folder">
+                            <button type="submit" class="btn btn-sm btn-outline-primary">Download</button>
+                        </form>
+                        <button onclick="removeFile('{{ current_path ~ '/' ~ item }}')" class="btn btn-sm btn-outline-danger">Remove</button>
+                    </div>
+                {% else %}
+                    <span>{{ item }}</span>
+                    <div>
+                        <a href="{{ url_for('main.file_system', req_path=(current_path ~ '/' ~ item)|trim('/')) }}" class="btn btn-sm btn-outline-primary">Download</a>
+                        <button onclick="removeFile('{{ current_path ~ '/' ~ item }}')" class="btn btn-sm btn-outline-danger">Remove</button>
+                    </div>
+                {% endif %}
+            </li>
+        {% endfor %}
+        {% if not contents.folders and not contents.files %}
+            <li class="list-group-item">No files or folders found.</li>
+        {% endif %}
+    </ul>
+</div>
+
+<script>
+function uploadFiles() {
+    const fileInput = document.getElementById('fileInput');
+    const formData = new FormData();
+    formData.append('action', 'upload_file');
+
+    for (let file of fileInput.files) {
+        formData.append('files[]', file);
+    }
+
+    uploadData(formData);
+}
+
+function uploadFolder() {
+    const folderInput = document.getElementById('folderInput');
+    
+    // Check if any files are selected
+    if (folderInput.files.length === 0) {
+        alert('Please select a folder to upload.');
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('action', 'upload_folder');
+
+    const allPaths = new Set();
+
+    for (let file of folderInput.files) {
+        formData.append('files[]', file, file.webkitRelativePath);
+        
+        // Add all parent paths to the set
+        const parts = file.webkitRelativePath.split('/');
+        for (let i = 0; i < parts.length - 1; i++) {
+            allPaths.add(parts.slice(0, i + 1).join('/'));
+        }
+    }
+
+    // Add all paths (including empty folders) to the formData
+    for (let path of allPaths) {
+        formData.append('folders[]', path);
+    }
+
+    uploadData(formData);
+}
+
+function uploadData(formData) {
+    const uploadProgress = document.getElementById('uploadProgress');
+    uploadProgress.style.display = 'block';
+
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', "{{ url_for('main.file_system', req_path=current_path) | safe }}", true);
+
+    xhr.upload.onprogress = function(event) {
+        if (event.lengthComputable) {
+            const percentComplete = (event.loaded / event.total) * 100;
+            uploadProgress.value = percentComplete;
+        }
+    };
+
+    xhr.onload = function() {
+        uploadProgress.style.display = 'none';
+        uploadProgress.value = 0;
+        if (xhr.status === 200) {
+            const response = JSON.parse(xhr.responseText);
+            if (response.status === 'success') {
+                alert(response.message);
+                location.reload();
+            } else {
+                alert('Upload failed: ' + response.message);
+            }
+        } else {
+            alert('Upload failed: Server error.');
+        }
+    };
+
+    xhr.onerror = function() {
+        uploadProgress.style.display = 'none';
+        alert('Upload failed: Network error.');
+    };
+
+    xhr.send(formData);
+}
+
+// Trigger file input when the "Upload Files" button is clicked
+document.querySelector('button[onclick="uploadFiles()"]').addEventListener('click', function(e) {
+    e.preventDefault();
+    document.getElementById('fileInput').click();
+});
+
+// Trigger folder input when the "Upload Folder" button is clicked
+document.querySelector('button[onclick="uploadFolder()"]').addEventListener('click', function(e) {
+    e.preventDefault();
+    document.getElementById('folderInput').click();
+});
+
+// Automatically start upload when files are selected
+document.getElementById('fileInput').addEventListener('change', uploadFiles);
+document.getElementById('folderInput').addEventListener('change', uploadFolder);
+</script>
+
+<script>
+function removeFile(filePath) {
+    if (confirm('Are you sure you want to delete this file?')) {
+        const formData = new FormData();
+        formData.append('action', 'remove');
+        formData.append('file_path', filePath);
+
+        fetch("{{ url_for('main.file_system', req_path=current_path) }}", {
+            method: 'POST',
+            body: formData,
+            credentials: 'same-origin'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                alert(data.message);
+                location.reload();
+            } else {
+                alert('Error: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred while removing the file.');
+        });
+    }
+}
+</script>
+{% endblock %}

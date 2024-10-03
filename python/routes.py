@@ -5,11 +5,11 @@ import os
 import tempfile
 from flask import Blueprint, render_template, request, redirect, url_for, flash, current_app, send_file, jsonify
 from flask.views import MethodView
-from python.file_manager import list_directory, save_file, download_file, remove_file
-from python.utils import allowed_file, extract_archive, create_logger, send_compressed, is_7z_available, compress_directory
+from file_manager import list_directory, save_file, download_file, remove_file
+from utils import allowed_file, extract_archive, create_logger, send_compressed, is_7z_available, compress_directory
 from werkzeug.utils import secure_filename
 from pathlib import Path
-from python.config import Config
+from config import Config
 import subprocess
 import zipfile
 import shutil
@@ -131,8 +131,16 @@ class FileSystemView(MethodView):
             files = request.files.getlist('files[]')
             logger.debug(f"Number of files received in folder: {len(files)}")
 
+            folders = request.form.getlist('folders[]')
+            logger.debug(f"Number of folders received: {len(folders)}")
+
+            if not files and not folders:
+                logger.warning("No files or folders received")
+                return jsonify({'status': 'error', 'message': 'No files or folders received'}), 400
+
             uploaded_count = 0
             uploaded_files = []
+            created_folders = []
 
             for file in files:
                 if file and file.filename:
@@ -150,9 +158,6 @@ class FileSystemView(MethodView):
                         logger.warning(f"File type not allowed: {file.filename}")
 
             # Handle folder creation for empty folders
-            folders = request.form.getlist('folders[]')
-            logger.debug(f"Folders to create: {folders}")
-            created_folders = []
             for folder in folders:
                 folder_path = abs_path / folder
                 logger.debug(f"Creating folder: {folder_path}")
@@ -305,4 +310,3 @@ class FileSystemView(MethodView):
 file_system_view = FileSystemView.as_view('file_system')
 main_bp.add_url_rule('/', view_func=file_system_view, methods=['GET', 'POST'])
 main_bp.add_url_rule('/<path:req_path>', view_func=file_system_view, methods=['GET', 'POST'])
-
